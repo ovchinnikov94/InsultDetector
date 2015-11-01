@@ -1,5 +1,13 @@
 __author__ = 'Dmitriy Ovchinnikov'
 
+from sklearn.preprocessing import LabelEncoder
+from time import time
+import json
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.pipeline import Pipeline
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.linear_model import PassiveAggressiveClassifier
+import re
 
 class InsultDetector:
 
@@ -8,7 +16,8 @@ class InsultDetector:
         it is constructor. Place the initialization here. Do not place train of the model here.
         :return: None
         """
-        pass
+        self.labelEncoder = LabelEncoder()
+        self.classifier = None
 
     def train(self, labeled_discussions):
         """
@@ -17,7 +26,25 @@ class InsultDetector:
         :return: None
         """
         # TODO put your code here
-        pass
+        print("Preparing corpus...")
+        t = time()
+        data = [[], []]
+        for root in labeled_discussions:
+        	for node in root.get('root').get('children')[:10]:
+        		new_data = self.getData(node)
+        		data[0] = data[0] + new_data[0]
+        		data[1] = data[1] + new_data[1]
+        print("Preparing finished! %0.3fs" % (time() - t))
+        l = self.labelEncoder.fit_transform(data[1])
+        self.classifier = Pipeline([
+        	('vect', CountVectorizer(analyzer='char_wb', max_df=0.5, max_features=None, ngram_range=(1, 5))),
+        	('clf', PassiveAggressiveClassifier(n_iter=50))
+        	])
+        print("Training...")
+        #for d in discussions[:10]
+        self.classifier.fit(data[0], l)
+        print ("Training succesfully finished! %0.3fs" % (time() - t))
+
 
     def classify(self, unlabeled_discussions):
         """
@@ -29,4 +56,41 @@ class InsultDetector:
         """
         # TODO put your code here
         return unlabeled_discussions
+    
+    def prepare(self, text):
+    	text = text.lower()
+    	text = re.sub(r"[\)]+", ')', text)
+    	text = re.sub(r"[\(]+", '(', text) 
+    	text = re.sub(
+        	r'(?i)\b((?:https?://|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:\'".,<>?«»“”‘’]))',
+        	'', text)
+    	return text
 
+    def getData(self, discussion):
+    	result1 = []
+    	result2 = []
+    	if (discussion != None):
+    		childs = discussion.get('children')
+    		if (childs != None):
+    			for child in childs:
+    				insult = child.get('insult')
+    				text = child.get('text')
+    				if (text != None and insult != None):
+    					result1.append(text)
+    					result2.append(insult)
+    				data_child = self.getData(child)
+    				if (len(data_child) == 2):
+    					result1 = result1 + data_child[0]
+    					result2 = result2 + data_child[1]
+    		return [result1, result2]
+    	else:
+    		return result
+
+
+if __name__ == '__main__':
+	detector = InsultDetector()
+	t0 = time()
+	print("Loading corpus...")
+	corpus = json.load(open('./discussions.json'))
+	print('Corpus loaded %0.3fs' % (time() - t0))
+	detector.train(corpus)
