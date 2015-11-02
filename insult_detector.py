@@ -4,8 +4,8 @@ from sklearn.preprocessing import LabelEncoder
 from time import time
 import json
 from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.naive_bayes import MultinomialNB
 from sklearn.linear_model import PassiveAggressiveClassifier
 import re
 
@@ -30,14 +30,15 @@ class InsultDetector:
         t = time()
         data = [[], []]
         for root in labeled_discussions:
-        	for node in root.get('root').get('children')[:10]:
+        	for node in root.get('root').get('children'):
         		new_data = self.getData(node)
         		data[0] = data[0] + new_data[0]
         		data[1] = data[1] + new_data[1]
         print("Preparing finished! %0.3fs" % (time() - t))
         l = self.labelEncoder.fit_transform(data[1])
         self.classifier = Pipeline([
-        	('vect', CountVectorizer(analyzer='char_wb', max_df=0.5, max_features=None, ngram_range=(1, 5))),
+        	('vect', CountVectorizer(analyzer='char_wb', max_df=0.5, max_features=None, ngram_range=(1, 7))),
+        	('tf_idf', TfidfTransformer(norm='l2')),
         	('clf', PassiveAggressiveClassifier(n_iter=50))
         	])
         print("Training...")
@@ -55,7 +56,22 @@ class InsultDetector:
         :return: None
         """
         # TODO put your code here
+        if (unlabeled_discussions != None):
+        	for root in unlabeled_discussions:
+        		for child in root['root']['children']:
+        			self.recursion_clf(child)
         return unlabeled_discussions
+
+    def recursion_clf(self, discussion):
+    	if (discussion != None):
+    		#print(discussion.get('id'))
+    		text = discussion.get('text')
+    		if (text != None):
+    			if (len(text) > 0):
+    				discussion['insult'] = self.labelEncoder.inverse_transform(self.classifier.predict([text]))[0]
+    		if (discussion.get('children') != None):
+    			for child in discussion['children']:
+    				self.recursion_clf(child)
     
     def prepare(self, text):
     	text = text.lower()
@@ -94,3 +110,7 @@ if __name__ == '__main__':
 	corpus = json.load(open('./discussions.json'))
 	print('Corpus loaded %0.3fs' % (time() - t0))
 	detector.train(corpus)
+	for root in detector.classify(corpus):
+		for item in root.get('root').get('children')[:10]:
+			print(item.get('text'))
+			print(item.get('insult'))
