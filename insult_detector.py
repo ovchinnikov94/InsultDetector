@@ -8,6 +8,9 @@ from sklearn.feature_extraction.text import TfidfTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import PassiveAggressiveClassifier
 import re
+from sklearn import cross_validation
+from sklearn.grid_search import GridSearchCV
+
 
 class InsultDetector:
 
@@ -19,7 +22,7 @@ class InsultDetector:
         self.labelEncoder = LabelEncoder()
         self.classifier = None
 
-    def train(self, labeled_discussions):
+    def train(self, labeled_discussions, research=False):
         """
         This method train the model.
         :param discussions: the list of discussions. See description of the discussion in the manual.
@@ -36,15 +39,39 @@ class InsultDetector:
         		data[1] = data[1] + new_data[1]
         print("Preparing finished! %0.3fs" % (time() - t))
         l = self.labelEncoder.fit_transform(data[1])
-        self.classifier = Pipeline([
-        	('vect', CountVectorizer(analyzer='char_wb', max_df=0.5, max_features=None, ngram_range=(1, 7))),
-        	('tf_idf', TfidfTransformer(norm='l2')),
-        	('clf', PassiveAggressiveClassifier(n_iter=50))
-        	])
-        print("Training...")
-        #for d in discussions[:10]
-        self.classifier.fit(data[0], l)
-        print ("Training succesfully finished! %0.3fs" % (time() - t))
+        
+        cross_validating = cross_validation.StratifiedKFold(l, n_folds=8)
+
+        if (research):
+        	text_clf = Pipeline([
+        		('vect', CountVectorizer()),
+        		('tf_idf', TfidfTransformer()),
+        		('clf', PassiveAggressiveClassifier(n_jobs=-1))
+        		])
+        	param = {'vect__ngram_range' : ((1,5), (1, 6), (1, 7), (1, 8)),
+        		'vect__max_df' : (0.4, 0.5, 0.6, 0.8, 1.0),
+        		'vect__analyzer' : ('char_wb', 'word', 'char'),
+        		'tf_idf__norm' : ('l1', 'l2'),
+        		'clf__n_iter' : (10, 50, 70),
+        		'clf__C' : (0.6, 0.8, 1.0, 1.1) } 
+        	print ("GridSearch running...")
+        	t_gs = time()
+        	gs_clf = GridSearchCV(text_clf, param, n_jobs=-1, verbose=1)
+        	gs_clf.fit(data[0][:200], l[:200])
+        	print("GridSearch finished! %0.3fs" % (time()-t_gs))
+        	best_parametres, score, _ = max(gs_clf.grid_scores_, key=lambda x: x[1])
+        	for param_name in sorted(param.keys()):
+        		print("%s: %r" % (param_name, best_parametres[param_name]))
+        	print("Score: %0.4f" % score)
+        else:
+        	self.classifier = Pipeline([
+        		('vect', CountVectorizer(analyzer='char_wb', max_df=0.4, max_features=None, ngram_range=(1, 5))),
+        		('tf_idf', TfidfTransformer(norm='l1')),
+        		('clf', PassiveAggressiveClassifier(C=0.6, n_iter=10))
+        		])
+        	print("Training...")
+        	self.classifier.fit(data[0], l)
+        	print ("Training succesfully finished! %0.3fs" % (time() - t))
 
 
     def classify(self, unlabeled_discussions):
