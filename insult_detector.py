@@ -37,27 +37,25 @@ class InsultDetector:
         		new_data = self.getData(node)
         		data[0] = data[0] + new_data[0]
         		data[1] = data[1] + new_data[1]
-        print("Preparing finished! %0.3fs" % (time() - t))
+        print("Preparing finished! %0.1fs" % (time() - t))
         l = self.labelEncoder.fit_transform(data[1])
         
-        cross_validating = cross_validation.StratifiedKFold(l, n_folds=8)
+        cross_validating = cross_validation.StratifiedKFold(l, n_folds=4)
 
         if (research):
         	text_clf = Pipeline([
-        		('vect', CountVectorizer()),
-        		('tf_idf', TfidfTransformer()),
-        		('clf', PassiveAggressiveClassifier(n_jobs=-1))
+        		('vect', CountVectorizer(analyzer='char_wb', max_df=0.4)),
+        		('tf_idf', TfidfTransformer(norm='l2')),
+        		('clf', PassiveAggressiveClassifier(n_jobs=-1, n_iter=70))
         		])
-        	param = {'vect__ngram_range' : ((1,5), (1, 6), (1, 7), (1, 8)),
-        		'vect__max_df' : (0.4, 0.5, 0.6, 0.8, 1.0),
-        		'vect__analyzer' : ('char_wb', 'word', 'char'),
-        		'tf_idf__norm' : ('l1', 'l2'),
-        		'clf__n_iter' : (10, 50, 70),
-        		'clf__C' : (0.6, 0.8, 1.0, 1.1) } 
+        	param = {'vect__ngram_range' : ((1,5), (1,6), (1,7), (1,9)),
+        		#'vect__max_df' : (0.35, 0.4, 0.45),
+        		#'clf__n_iter' : (50, 70, 90),
+        		'clf__C' : (0.9, 1.0, 1.1) } 
         	print ("GridSearch running...")
         	t_gs = time()
-        	gs_clf = GridSearchCV(text_clf, param, n_jobs=-1, verbose=1)
-        	gs_clf.fit(data[0][:200], l[:200])
+        	gs_clf = GridSearchCV(text_clf, param, n_jobs=-1, cv=cross_validating, verbose=1)
+        	gs_clf.fit(data[0], l)
         	print("GridSearch finished! %0.3fs" % (time()-t_gs))
         	best_parametres, score, _ = max(gs_clf.grid_scores_, key=lambda x: x[1])
         	for param_name in sorted(param.keys()):
@@ -65,13 +63,13 @@ class InsultDetector:
         	print("Score: %0.4f" % score)
         else:
         	self.classifier = Pipeline([
-        		('vect', CountVectorizer(analyzer='char_wb', max_df=0.4, max_features=None, ngram_range=(1, 5))),
-        		('tf_idf', TfidfTransformer(norm='l1')),
-        		('clf', PassiveAggressiveClassifier(C=0.6, n_iter=10))
+        		('vect', CountVectorizer(analyzer='char_wb', max_df=0.4, max_features=None, ngram_range=(1, 8))),
+        		('tf_idf', TfidfTransformer(norm='l2')),
+        		('clf', PassiveAggressiveClassifier(C=1.1, n_iter=70))
         		])
         	print("Training...")
         	self.classifier.fit(data[0], l)
-        	print ("Training succesfully finished! %0.3fs" % (time() - t))
+        	print ("Training succesfully finished! %0.1fs" % (time() - t))
 
 
     def classify(self, unlabeled_discussions):
@@ -135,8 +133,8 @@ if __name__ == '__main__':
 	t0 = time()
 	print("Loading corpus...")
 	corpus = json.load(open('./discussions.json'))
-	print('Corpus loaded %0.3fs' % (time() - t0))
-	detector.train(corpus)
+	print('Corpus loaded %0.1fs' % (time() - t0))
+	detector.train(corpus, True)
 	for root in detector.classify(corpus):
 		for item in root.get('root').get('children')[:10]:
 			print(item.get('text'))
