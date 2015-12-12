@@ -1,12 +1,16 @@
+# -*- coding: utf-8 -*-
 __author__ = 'Dmitriy Ovchinnikov'
 
 from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import Normalizer
 from time import time
 import json
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_extraction.text import TfidfTransformer
+from sklearn.feature_extraction.text import HashingVectorizer
 from sklearn.pipeline import Pipeline
 from sklearn.linear_model import PassiveAggressiveClassifier
+from sklearn.decomposition import TruncatedSVD
 import re
 from sklearn import cross_validation
 from sklearn.grid_search import GridSearchCV
@@ -62,10 +66,17 @@ class InsultDetector:
         		print("%s: %r" % (param_name, best_parametres[param_name]))
         	print("Score: %0.4f" % score)
         else:
+        	hashing = HashingVectorizer(n_features=2**20, non_negative=True, norm=None, ngram_range=(1, 4), analyzer='char_wb')
+        	tfidf = TfidfTransformer()
+        	svd = TruncatedSVD(n_components=100, algorithm='arpack')
+        	normalizer = Normalizer(copy=False)
+        	clf = PassiveAggressiveClassifier(C=1.0, n_iter=70, n_jobs=-1)
         	self.classifier = Pipeline([
-        		('vect', CountVectorizer(analyzer='char_wb', max_df=0.4, max_features=None, ngram_range=(1, 8))),
-        		('tf_idf', TfidfTransformer(norm='l2')),
-        		('clf', PassiveAggressiveClassifier(C=1.1, n_iter=70))
+        		('vect', hashing), 
+        		('tf_idf', tfidf),
+        		('lsa', svd), 
+        		('norm', normalizer),
+        		('clf', clf)
         		])
         	print("Training...")
         	self.classifier.fit(data[0], l)
@@ -99,13 +110,12 @@ class InsultDetector:
     				self.recursion_clf(child)
     
     def prepare(self, text):
-    	text = text.lower()
-    	text = re.sub(r"[\)]+", ')', text)
-    	text = re.sub(r"[\(]+", '(', text) 
-    	text = re.sub(
-        	r'(?i)\b((?:https?://|www\d{0,3}[.]|[a-z0-9.\-]+[.][a-z]{2,4}/)(?:[^\s()<>]+|\(([^\s()<>]+|(\([^\s()<>]+\)))*\))+(?:\(([^\s()<>]+|(\([^\s()<>]+\)))*\)|[^\s`!()\[\]{};:\'".,<>?«»“”‘’]))',
-        	'', text)
-    	return text
+        text = text.lower()
+        text = re.sub(r"[\)]+", ')', text)
+        text = re.sub(r"[\(]+", '(', text)
+        text = re.sub(r"[ ]([0-9])[ ]", ' ', text)
+        text = re.sub(r"(?:http.+)([ ]|$)+", ' ', text)
+        return text
 
     def getData(self, discussion):
     	result1 = []
@@ -134,8 +144,5 @@ if __name__ == '__main__':
 	print("Loading corpus...")
 	corpus = json.load(open('./discussions.json'))
 	print('Corpus loaded %0.1fs' % (time() - t0))
-	detector.train(corpus, True)
-	for root in detector.classify(corpus):
-		for item in root.get('root').get('children')[:10]:
-			print(item.get('text'))
-			print(item.get('insult'))
+	detector.train(corpus[:10])
+	detector.classify(corpus[10:20])
